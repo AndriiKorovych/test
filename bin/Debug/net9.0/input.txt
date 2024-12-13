@@ -1,0 +1,1 @@
+The quick brown fox jumps over the lazy dog. Encryption is the process of encoding information to protect its confidentiality. Let's test this random text with AES-GCM encryption!
