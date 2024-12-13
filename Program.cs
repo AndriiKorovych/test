@@ -1,106 +1,57 @@
-﻿using System;
+using System;
 using System.IO;
-using PeNet; // Для роботи з PE-файлами
-using ELFSharp.ELF; // Для роботи з ELF-файлами
-using ELFSharp.ELF.Sections;
+using System.Security.Cryptography;
+using System.Text;
 
 class Program
 {
     static void Main(string[] args)
     {
-        if (args.Length != 1)
+        string inputFilePath = "input.txt"; // Вхідний текстовий файл
+        string outputFilePath = "encrypted.bin"; // Файл для збереження шифротексту
+
+        // AES-GCM параметри
+        byte[] key = GenerateRandomBytes(32); // 256-бітний ключ
+        byte[] iv = GenerateRandomBytes(12); // 96-бітний IV
+
+        // Читання тексту з файлу
+        string plainText = File.ReadAllText(inputFilePath);
+
+        // Шифрування
+        (byte[] cipherText, byte[] authTag) = EncryptAesGcm(plainText, key, iv);
+
+        // Запис у файл: IV, шифротекст і тег автентифікації
+        using (FileStream fileStream = new FileStream(outputFilePath, FileMode.Create))
         {
-            Console.WriteLine("Usage: analyze <file_path>");
-            return;
+            fileStream.Write(iv, 0, iv.Length);
+            fileStream.Write(cipherText, 0, cipherText.Length);
+            fileStream.Write(authTag, 0, authTag.Length);
         }
 
-        string filePath = args[0];
+        Console.WriteLine($"Файл успішно зашифрований та збережений у {outputFilePath}");
+    }
 
-        try
+    static (byte[] cipherText, byte[] authTag) EncryptAesGcm(string plainText, byte[] key, byte[] iv)
+    {
+        using (AesGcm aesGcm = new AesGcm(key))
         {
-            byte[] magic = new byte[4];
-            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-            {
-                stream.Read(magic, 0, 4);
-            }
+            byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
+            byte[] cipherText = new byte[plainBytes.Length];
+            byte[] authTag = new byte[16]; // 128-бітний тег автентифікації
 
-            if (magic[0] == 'M' && magic[1] == 'Z') // Перевірка на PE-файл
-            {
-                AnalyzePE(filePath);
-            }
-            else if (magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F') // Перевірка на ELF-файл
-            {
-                AnalyzeELF(filePath);
-            }
-            else
-            {
-                Console.WriteLine("Unsupported file format. Please provide a PE or ELF file.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
+            aesGcm.Encrypt(iv, plainBytes, cipherText, authTag);
+
+            return (cipherText, authTag);
         }
     }
 
-    static void AnalyzePE(string filePath)
+    static byte[] GenerateRandomBytes(int length)
     {
-        try
+        byte[] bytes = new byte[length];
+        using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
         {
-            var peFile = new PeFile(filePath);
-            Console.WriteLine($"Analyzing PE file: {filePath}");
-            Console.WriteLine("Imported Libraries and Functions:");
-
-            if (peFile.ImportedFunctions != null)
-            {
-                foreach (var func in peFile.ImportedFunctions)
-                {
-                    Console.WriteLine($"  Function: {func}");
-                }
-            }
-
-            if (peFile.ImportedDlls != null)
-            {
-                foreach (var dll in peFile.ImportedDlls)
-                {
-                    Console.WriteLine($"Library: {dll}");
-                }
-            }
+            rng.GetBytes(bytes);
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error analyzing PE file: {ex.Message}");
-        }
-    }
-
-    static void AnalyzeELF(string filePath)
-    {
-        try
-        {
-            var elf = ELFReader.Load(filePath);
-            Console.WriteLine($"Analyzing ELF file: {filePath}");
-            Console.WriteLine("Imported Libraries and Functions:");
-
-            foreach (var section in elf.Sections)
-            {
-                if (section.Name == ".dynsym") // Динамічні символи
-                {
-                    var symbolTable = section as ISymbolTable;
-                    foreach (var symbol in symbolTable.Entries)
-                    {
-                        Console.WriteLine($"  Function: {symbol.Name}");
-                    }
-                }
-            }
-
-            foreach (var lib in elf.GetNeededLibraries()) // Залежні бібліотеки
-            {
-                Console.WriteLine($"Library: {lib}");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error analyzing ELF file: {ex.Message}");
-        }
+        return bytes;
     }
 }
